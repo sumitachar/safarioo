@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🌍 Safarioo - Ultimate Travel Squad Platform
 
-## Getting Started
+Safarioo হচ্ছে একটি প্রিমিয়াম ট্রাভেল এবং সোশ্যাল প্ল্যাটফর্ম, যেখানে ট্রাভেলাররা তাদের পছন্দের স্কোয়াড খুঁজে পেতে পারে, জয়েন রিকোয়েস্ট পাঠাতে পারে এবং ট্রাভেল-ফোকাসড সোশ্যাল প্রোফাইল মেইনটেইন করতে পারে। এটি সম্পূর্ণ টাইপ-সেফ এবং মডার্ন আর্কিটেকচার অনুসরণ করে তৈরি।
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## ✨ Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 👤 User Profile & Vibes
+- **Deep Profile System:** জডিয়াক সাইন, হাইট, পার্সোনালিটি টাইপ (Ambivert/Introvert) এবং কমিউনিকেশন স্টাইল সেটআপ।
+- **Lifestyle Tracking:** স্মোকিং, ড্রিঙ্কিং এবং পেটস প্রেফারেন্স ডিটেইলস।
+- **Profile Prompts:** ইন্টার‍্যাক্টিভ প্রোফাইল প্রম্পটস এবং সোশ্যাল মিডিয়া (Instagram) লিঙ্কিং।
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### ⛺ Squad Management
+- **Explore Feed:** ক্যাটাগরি অনুযায়ী (Travel, Movie, Event) স্কোয়াড ব্রাউজ করা।
+- **Join System:** কাস্টম মেসেজসহ স্কোয়াডে জয়েন করার রিকোয়েস্ট পাঠানো।
+- **My Hub:** নিজের হোস্ট করা এবং জয়েন করা স্কোয়াডগুলোর রিয়েল-টাইম স্ট্যাটাস দেখা।
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 💼 Agency Desk (Pro Features)
+- **Package Listing:** এজেন্সিগুলোর জন্য প্রো-প্যাকেজ লিস্টিং সিস্টেম।
+- **Dashboard:** বুকিং কাউন্ট, রেটিং এবং সেলস স্ট্যাটাস দেখার জন্য আলাদা ড্যাশবোর্ড।
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🛠 Tech Stack
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Frontend (Next.js)
+- **Framework:** Next.js 15+ (App Router)
+- **State:** Redux Toolkit (Persistent Auth & Profile)
+- **UI:** Tailwind CSS + Framer Motion
+- **Icons:** Lucide React
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Backend (NestJS)
+- **Framework:** NestJS (Node.js)
+- **ORM:** Prisma ORM
+- **Database:** PostgreSQL
+- **Security:** Bcrypt (Hashing) & JWT (Planned)
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📂 Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Backend (NestJS)
+```text
+safarioo-backend/
+├── prisma/
+│   └── schema.prisma    # Database Models (User, Squad, JoinRequest, Package)
+├── src/
+│   ├── auth/            # Authentication Logic
+│   ├── users/           # User & Profile Management
+│   ├── prisma/          # Global Prisma Service
+│   └── main.ts          # Server Entry (CORS enabled)

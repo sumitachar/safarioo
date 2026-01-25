@@ -1,26 +1,148 @@
 @import "tailwindcss";
 
+/* ======================
+   Tailwind 4 Theme Mapping
+   ====================== */
+@theme {
+  --radius-xl: 1rem;
+  --radius-lg: 0.75rem;
+  
+  /* Safarioo Color Palette Mapping */
+  --color-background: var(--color-background);
+  --color-foreground: var(--color-foreground);
+  --color-card: var(--color-card);
+  --color-card-foreground: var(--color-card-foreground);
+  --color-popover: var(--color-popover);
+  --color-popover-foreground: var(--color-popover-foreground);
+  
+  /* Brand Colors */
+  --color-primary: var(--color-primary); /* Deep Royal Blue / Indigo */
+  --color-primary-foreground: var(--color-primary-foreground);
+  --color-secondary: var(--color-secondary); /* Sunset Orange / Marigold */
+  --color-secondary-foreground: var(--color-secondary-foreground);
+  
+  --color-accent: var(--color-accent);
+  --color-accent-foreground: var(--color-accent-foreground);
+  --color-destructive: var(--color-destructive);
+  --color-border: var(--color-border);
+  --color-input: var(--color-input);
+  --color-ring: var(--color-ring);
+  --color-muted: var(--color-muted);
+  --color-muted-foreground: var(--color-muted-foreground);
+}
+
+/* ======================
+   Safarioo Visual Identity
+   ====================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.75rem;
+  
+  /* Light Theme - Inspired by Sand, Sky and Marigold */
+  --color-background: oklch(0.98 0.005 30); /* Warm White / Bone */
+  --color-foreground: oklch(0.25 0.02 260); /* Deep Charcoal Blue */
+  
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.25 0.02 260);
+  
+  --color-primary: oklch(0.45 0.18 260); /* Deep Royal Blue - Trust & Sky */
+  --color-primary-foreground: oklch(0.98 0.01 260);
+  
+  --color-secondary: oklch(0.70 0.19 45); /* Indian Marigold Orange - Energy */
+  --color-secondary-foreground: oklch(0.2 0.05 45);
+  
+  --color-accent: oklch(0.92 0.04 80); /* Soft Sand */
+  --color-accent-foreground: oklch(0.45 0.18 260);
+  
+  --color-border: oklch(0.90 0.01 260);
+  --color-input: oklch(0.95 0.01 260);
+  --color-ring: oklch(0.45 0.18 260 / 0.5);
+  
+  --color-muted: oklch(0.96 0.01 260);
+  --color-muted-foreground: oklch(0.55 0.03 260);
+  
+  --color-destructive: oklch(0.60 0.20 25);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  /* Dark Theme - Midnight & Neon Accents */
+  --color-background: oklch(0.18 0.02 260); /* Midnight Blue */
+  --color-foreground: oklch(0.95 0.01 260);
+  
+  --color-card: oklch(0.22 0.03 260);
+  --color-card-foreground: oklch(0.95 0.01 260);
+  
+  --color-primary: oklch(0.65 0.15 250); /* Bright Sky Blue */
+  --color-primary-foreground: oklch(0.15 0.02 260);
+  
+  --color-secondary: oklch(0.75 0.18 55); /* Glowing Marigold */
+  --color-secondary-foreground: oklch(0.15 0.02 55);
+  
+  --color-accent: oklch(0.30 0.05 260);
+  --color-accent-foreground: oklch(0.95 0.01 260);
+  
+  --color-border: oklch(0.30 0.03 260);
+  --color-input: oklch(0.28 0.03 260);
+  --color-ring: oklch(0.65 0.15 250 / 0.4);
+  
+  --color-muted: oklch(0.25 0.03 260);
+  --color-muted-foreground: oklch(0.70 0.02 260);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ======================
+   Modern Base Styles
+   ====================== */
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: 'Inter', sans-serif; 
+    -webkit-font-smoothing: antialiased;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Form Elements */
+  input, textarea, select {
+    @apply border-border bg-card text-foreground transition-all duration-200;
+    border-radius: var(--radius);
+    border-width: 1px;
+    padding: 0.625rem 1rem;
+  }
+
+  input:focus {
+    @apply ring-2 ring-primary/20 border-primary outline-none;
+  }
+
+  /* Buttons */
+  button {
+    @apply font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50;
+    border-radius: var(--radius);
+  }
+
+  /* Standard Card Style */
+  .card {
+    @apply bg-card text-card-foreground border-border transition-all duration-300;
+    border-radius: var(--radius);
+    border-width: 1px;
+    box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.05);
+  }
+
+  .card:hover {
+    @apply border-primary/30 shadow-xl;
+    transform: translateY(-4px);
+  }
+
+  /* Custom Scrollbar for Travel Experience */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-background);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-muted);
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-primary);
+  }
 }
