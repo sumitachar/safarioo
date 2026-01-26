@@ -10,7 +10,6 @@ interface TripCardProps {
   price?: string;
   author?: string;
   category?: string;
-  // নতুন ফিল্ডস
   gender?: "Mixed" | "Only Boys" | "Only Girls";
   ageRange?: string;
 }

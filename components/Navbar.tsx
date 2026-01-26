@@ -52,7 +52,7 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className={`sticky top-0 z-[100] w-full transition-all duration-300 ${
+      <nav className={`sticky top-0 z-100 w-full transition-all duration-300 ${
         scrolled 
         ? "bg-background/80 backdrop-blur-xl border-b border-border shadow-sm py-2" 
         : "bg-transparent py-4"
@@ -61,7 +61,7 @@ export default function Navbar() {
           
           {/* Logo Section */}
           <Link href="/" className="flex items-center gap-2 group shrink-0">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20 group-hover:rotate-[10deg] transition-transform duration-300">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20 group-hover:rotate-10 transition-transform duration-300">
               <Compass size={26} />
             </div>
             <div className="flex flex-col">
@@ -92,7 +92,8 @@ export default function Navbar() {
               <div className="flex items-center gap-3">
                 <Link href="/wallet" className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-full hover:bg-yellow-500/20 transition-all">
                    <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center text-[10px] text-white font-black italic">S</div>
-                   <span className="text-xs font-black text-yellow-600">{user?.coins || 0}</span>
+                   {/* UPDATE: user.coins to user.coin */}
+                   <span className="text-xs font-black text-yellow-600">{user?.coin || 0}</span>
                 </Link>
 
                 <Link href="/notifications" className="relative p-2.5 text-muted-foreground hover:text-primary hidden sm:block">
@@ -100,13 +101,14 @@ export default function Navbar() {
                   <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background"></span>
                 </Link>
                 
-                <Link href={`/profile/${user?.id || 'me'}`} className="flex items-center gap-2 rounded-2xl border border-border bg-card p-1 pr-4 text-sm font-bold hover:border-primary/50 transition-all">
+                <Link href={`/profile/${user?.username || 'me'}`} className="flex items-center gap-2 rounded-2xl border border-border bg-card p-1 pr-4 text-sm font-bold hover:border-primary/50 transition-all">
                   <div className="h-8 w-8 rounded-xl bg-secondary/20 overflow-hidden flex items-center justify-center text-secondary">
                     {user?.profileImage ? (
                       <img src={user.profileImage} className="w-full h-full object-cover" alt="" />
                     ) : <User size={18} />}
                   </div>
-                  <span className="hidden sm:inline">{user?.name.split(' ')[0]}</span>
+                  {/* UPDATE: Safety check for name split */}
+                  <span className="hidden sm:inline">{user?.name?.split(' ')[0]}</span>
                 </Link>
 
                 <button onClick={handleLogout} className="p-2.5 text-muted-foreground hover:text-red-500 transition-colors hidden sm:block">
@@ -137,7 +139,8 @@ export default function Navbar() {
                     <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center text-white font-black italic">S</div>
                     <div>
                       <p className="text-[10px] font-bold text-muted-foreground uppercase leading-none">Safarioo Coins</p>
-                      <p className="text-lg font-black text-yellow-600">{user?.coins || 0}</p>
+                      {/* UPDATE: user.coins to user.coin */}
+                      <p className="text-lg font-black text-yellow-600">{user?.coin || 0}</p>
                     </div>
                   </div>
                   <Wallet size={20} className="text-yellow-500" />
@@ -165,7 +168,7 @@ export default function Navbar() {
               {isLoggedIn ? (
                 <>
                   <Link href="/notifications" onClick={() => setIsMenuOpen(false)} className="w-full rounded-2xl bg-muted py-4 text-center font-black flex items-center justify-center gap-2 hover:bg-primary/10 transition-all"><Bell size={18}/> Notifications</Link>
-                  <Link href={`/profile/${user?.id || 'me'}`} onClick={() => setIsMenuOpen(false)} className="w-full rounded-2xl bg-foreground text-background dark:bg-card dark:text-foreground py-4 text-center font-black">View My Profile</Link>
+                  <Link href={`/profile/${user?.username || 'me'}`} onClick={() => setIsMenuOpen(false)} className="w-full rounded-2xl bg-foreground text-background dark:bg-card dark:text-foreground py-4 text-center font-black">View My Profile</Link>
                   <button onClick={handleLogout} className="w-full py-4 text-center font-black text-red-500 flex items-center justify-center gap-2 hover:bg-red-50 transition-all"><LogOut size={18} /> Logout</button>
                 </>
               ) : (
