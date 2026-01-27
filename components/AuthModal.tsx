@@ -139,7 +139,7 @@ export default function AuthModal({ isOpen, onClose, type, setType }: {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
       <div className="relative w-full max-w-lg bg-card rounded-[2.5rem] border border-border shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
         
         <button onClick={onClose} className="absolute top-6 right-6 p-2 rounded-full hover:bg-muted transition-colors z-10">

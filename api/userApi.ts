@@ -4,7 +4,7 @@ export const userApi = {
   verifyOtp: async (data: { email: string; otp: string }) => {
     try {
       const response = await api.post('/verify-otp', data);
-      
+
       const resData = response.data;
 
       if (resData.status === false || resData.status === "false") {
@@ -13,18 +13,21 @@ export const userApi = {
 
       return resData;
     } catch (error: any) {
-      const errorMessage = 
-        error.response?.data?.message || 
-        error.message || 
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
         'OTP verification failed';
-        
+
       throw new Error(errorMessage);
     }
   },
 
   checkUsername: async (username: string) => {
     try {
-      const response = await api.get(`/check-username/${username}`);
+      const response = await api.post("/check-username", {
+        username: username,
+      });
+
       const resData = response.data;
 
       if (resData.status === false || resData.status === "false") {
@@ -37,6 +40,7 @@ export const userApi = {
       return { available: false, message: "Error checking username" };
     }
   },
+
 
   /**
    * Updates user metadata via POST /user/meta
