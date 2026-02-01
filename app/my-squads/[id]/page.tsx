@@ -27,22 +27,19 @@ import { updateSquad } from "@/store/slices/squadsSlice";
 // Membership status type
 type MembershipStatus = "admin" | "member" | "pending" | "not_joined";
 
-// REMOVED 'async' - Client components must be sync functions
 export default function SquadDetailsPage({
   params: paramsPromise,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // Next.js 15 params unwrap for Client Components
   const params = use(paramsPromise);
   const squadId = params.id;
 
   const dispatch = useDispatch<AppDispatch>();
   const { isLoggedIn, user } = useSelector((state: RootState) => state.auth);
- const reduxSquad = useSelector((state: RootState) => 
-  state.squads.byCode[squadId] ||   // প্রথমে squad_code দিয়ে খোঁজো
-  state.squads.byId[squadId]        // fallback: id দিয়ে
-) as DisplaySquad | undefined;
+  const reduxSquad = useSelector((state: RootState) => 
+    state.squads.byCode[squadId] || state.squads.byId[squadId]
+  ) as DisplaySquad | undefined;
 
   const [squad, setSquad] = useState<DisplaySquad | null>(null);
   const [membership, setMembership] = useState<MembershipStatus>("not_joined");
@@ -55,18 +52,16 @@ export default function SquadDetailsPage({
   const [mounted, setMounted] = useState(false);
 
   // Carousel logic
-  const [squadImages, setSquadImages] = useState<string[]>([
-    "https://images.unsplash.com/photo-1506461883276-594a12b11cf3",
-    "https://images.unsplash.com/photo-1596230529625-7ee10f7b09b6",
-    "https://images.unsplash.com/photo-1501785888041-af3ef285b470",
-  ]);
+  const [squadImages, setSquadImages] = useState<string[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   const nextSlide = useCallback(() => {
+    if (squadImages.length === 0) return;
     setCurrentSlide((prev) => (prev === squadImages.length - 1 ? 0 : prev + 1));
   }, [squadImages.length]);
 
   const prevSlide = () => {
+    if (squadImages.length === 0) return;
     setCurrentSlide((prev) => (prev === 0 ? squadImages.length - 1 : prev - 1));
   };
 
@@ -79,11 +74,7 @@ export default function SquadDetailsPage({
   const [likes, setLikes] = useState(142);
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  const [publicComments] = useState([
-    { id: 1, user: "MountainGoat", text: "Is there a specific gear list for this?", time: "2h ago" },
-    { id: 2, user: "Wanderer_J", text: "Spiti in Feb is magical. Hope I get accepted!", time: "5h ago" },
-  ]);
-
+  
   // Modal & Media states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
@@ -107,37 +98,36 @@ export default function SquadDetailsPage({
   useEffect(() => {
     if (!squadId || !isLoggedIn || !mounted) return;
 
+    let isMounted = true;
+
     const fetchSquad = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        // 1. Try Redux first
-        if (reduxSquad) {
-          setSquad(reduxSquad);
-          setMembership(reduxSquad.user_id === user?.id ? "admin" : "not_joined");
-          setLoading(false);
-          return;
-        }
-
-        // 2. API Fallback
         const response = await squadApi.getSquadById(squadId, "Travel Tour");
 
-        if (response?.data) {
+        if (isMounted && response?.data) {
           const s = response.data;
           const dateObj = new Date(s.departure_date);
+
+          // Fix: Ensure images are always present for DisplaySquad type
+          const imageList = s.images && s.images.length > 0 
+            ? s.images 
+            : [`https://picsum.photos/seed/squad-${s.id}/800/500`];
 
           const transformed: DisplaySquad = {
             id: String(s.id),
             title: s.squad_title ?? "Untitled Squad",
             location: s.location ?? "Unknown",
-            date: dateObj.toLocaleDateString("en-IN", {
-              day: "numeric", month: "short", year: "numeric",
-            }),
+            date: isNaN(dateObj.getTime()) 
+              ? "TBD" 
+              : dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
             time: s.departure_time ?? "TBD",
-            members: `Max ${s.max_member ?? "?"}`,
-            status: dateObj > new Date() ? "Upcoming" : "Completed",
-            cost: s.cost ?? "Free",
+            members: String(s.max_member ?? "0"),
+            status: !isNaN(dateObj.getTime()) && dateObj > new Date() ? "Upcoming" : "Completed",
+            images: imageList, // Added to fix build error
+            cost: s.cost ?? "0",
             duration: s.duration ?? "N/A",
             gender: s.gender ?? "Any",
             ageGroup: s.age_group ?? "All",
@@ -148,21 +138,23 @@ export default function SquadDetailsPage({
             requestCount: s.requestCount ?? 0,
           };
 
-          dispatch(updateSquad(transformed));
           setSquad(transformed);
+          setSquadImages(imageList);
           setMembership(s.user_id === user?.id ? "admin" : "not_joined");
-        } else {
-          setError("Squad not found");
+          dispatch(updateSquad(transformed));
+        } else if (isMounted) {
+          setError("Squad mission not found in database.");
         }
       } catch (err: any) {
-        setError(err.message || "Failed to load squad details");
+        if (isMounted) setError(err.message || "Failed to establish connection to hub.");
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchSquad();
-  }, [squadId, isLoggedIn, user?.id, reduxSquad, dispatch, mounted]);
+    return () => { isMounted = false; };
+  }, [squadId, isLoggedIn, user?.id, mounted, dispatch]);
 
   const handleSaveMedia = (data: any) => {
     if (editingMedia) {
@@ -308,9 +300,8 @@ export default function SquadDetailsPage({
                       <h3 className="text-xl font-black uppercase italic tracking-tighter">Community Thread</h3>
                     </div>
                   </div>
-
-                  <div className="bg-card border-2 border-border/40 rounded-[3rem] p-8 shadow-sm">
-                    {/* Add Comment Input & Thread mapping here if needed, keeping similar to your original code */}
+                  <div className="bg-card border-2 border-border/40 rounded-[3rem] p-8 shadow-sm text-center text-muted-foreground italic text-sm">
+                    Connect with travelers below...
                   </div>
                 </div>
               </div>
