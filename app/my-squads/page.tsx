@@ -1,69 +1,214 @@
 "use client"
-import { useState, useEffect } from "react";
-import { useSelector } from "react-redux";
-import { RootState } from "@/store/store";
-import Link from "next/link"; 
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { RootState, AppDispatch } from "@/store/store";
+import Link from "next/link";
 import CreateSquadModal from "@/components/CreateSquadModal";
 import CreatePackageModal from "@/components/CreatePackageModal";
-import { 
-  Users, MapPin, Calendar, Plus, Lock, Building2, 
-  PlusCircle, History, Star, Briefcase, UserCircle, Settings2, ArrowUpRight
+import {
+  Users, MapPin, Calendar, Plus, Lock, Building2,
+  PlusCircle, History, Star, UserCircle, Settings2, ArrowUpRight,
+  Clock, Tag, Target, Plane, Film, Ticket, Coffee, Loader2,
+  ChevronRight, ChevronLeft, ShieldCheck, Milestone, BadgeIndianRupee
 } from "lucide-react";
+import { squadApi } from "@/api/squadApi";
+import { setSquads } from "@/store/slices/squadsSlice";
+
+// ── Types ──
+type SquadCategory = "Travel Tour" | "Movie" | "Event" | "Hangout";
+
+type SquadApiItem = {
+  id: number;
+  user_id: number;
+  post_id: number;
+  squad_title: string;
+  location: string;
+  cost: string;
+  departure_date: string;
+  departure_time: string;
+  duration: string;
+  gender: string;
+  age_group: string;
+  max_member: number;
+  tag: string[] | null;
+  squad_code: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: null | string;
+  images?: string[];
+};
+
+export type DisplaySquad = {
+  id: string;
+  title: string;
+  location: string;
+  date: string;
+  time: string;
+  members: string;
+  status: "Upcoming" | "Completed" | "live";
+  images: string[];
+  cost: string;
+  duration: string;
+  gender: string;
+  ageGroup: string;
+  tags: string[] | null;
+  squad_code: string;
+  user_id?: number;
+  description?: string;
+  requestCount?: number;
+};
 
 export default function MySquadsPage() {
+  const dispatch = useDispatch<AppDispatch>();
   const { isLoggedIn, user } = useSelector((state: RootState) => state.auth);
-  const [activeTab, setActiveTab] = useState<'joined' | 'hosted' | 'agency'>('joined');
+
+  const [activeTab, setActiveTab] = useState<'joined' | 'hosted' | 'agency'>('hosted');
+  const [activeCategory, setActiveCategory] = useState<SquadCategory>("Travel Tour");
   const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
   const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
-  
+
+  const [displaySquads, setDisplaySquads] = useState<DisplaySquad[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // ডাটা সোর্স (রিয়েল অ্যাপে এগুলো API থেকে আসবে)
-  const joinedSquads = [
-    { id: "1", title: "Spiti Stargazing", location: "Himachal", date: "Feb 12", members: "8/12", status: "Active", image: "https://images.unsplash.com/photo-1506461883276-594a12b11cf3" },
-    { id: "2", title: "Kerala Backwaters", location: "Alleppey", date: "Mar 05", members: "4/6", status: "Active", image: "https://images.unsplash.com/photo-1593693397690-262ad908d1f6" },
+  const categoryOptions: { name: SquadCategory; icon: any }[] = [
+    { name: "Travel Tour", icon: <Plane size={14} /> },
+    { name: "Movie", icon: <Film size={14} /> },
+    { name: "Event", icon: <Ticket size={14} /> },
+    { name: "Hangout", icon: <Coffee size={14} /> },
   ];
 
-  const hostedSquads = [
-    { id: "101", title: "Manali Trekking", location: "Vashisht", date: "Apr 20", members: "2/10", status: "Pending", image: "https://images.unsplash.com/photo-1596230529625-7ee10f7b09b6" },
-  ];
+  const observer = useRef<IntersectionObserver | null>(null);
+  const lastSquadElementRef = useCallback((node: HTMLDivElement) => {
+    if (loading) return;
+    if (observer.current) observer.current.disconnect();
+    observer.current = new IntersectionObserver(entries => {
+      // Logic Fix: Only trigger next page if NOT loading, hasMore is true, and it's actually intersecting
+      if (entries[0].isIntersecting && hasMore && !loading) {
+        setPage(prevPage => prevPage + 1);
+      }
+    });
+    if (node) observer.current.observe(node);
+  }, [loading, hasMore]);
 
-  const agencyPackages = [
-    { id: "201", title: "Char Dham VIP Yatra", price: "₹45,000", bookings: 124, status: "Live", rating: 4.9, image: "https://images.unsplash.com/photo-1584810359583-96fc3448beaa" },
-    { id: "202", title: "Ladakh Bike Tour", price: "₹32,500", bookings: 86, status: "Sold Out", rating: 4.8, image: "https://images.unsplash.com/photo-1521401830884-6c03c1c87ebb" },
-  ];
+  // Reset state when filters change
+  useEffect(() => {
+    setDisplaySquads([]);
+    setPage(1);
+    setHasMore(true);
+    setError(null);
+  }, [activeCategory, activeTab]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user?.id || activeTab === 'agency') return;
+
+    // Use a flag to prevent state updates on unmounted component (handles StrictMode double-call)
+    let isMounted = true;
+
+    const fetchSquads = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        console.log(`Fetching ${activeTab} squads for user ${user.id}, category: ${activeCategory}, page: ${page}`);
+        const response = await squadApi.getSquads(activeCategory, user.id, page);
+        
+        if (!isMounted) return;
+
+        const apiData = response?.data?.data || [];
+
+        if (apiData.length === 0) {
+          setHasMore(false);
+        } else {
+          const transformed: DisplaySquad[] = apiData.map((s: SquadApiItem) => {
+            const dateObj = new Date(s.departure_date);
+            const isFuture = !isNaN(dateObj.getTime()) && dateObj > new Date();
+            const imageList = s.images && s.images.length > 0 
+              ? s.images 
+              : [`https://picsum.photos/seed/squad-${s.id}/800/500`];
+
+            return {
+              id: String(s.id),
+              title: s.squad_title || "Untitled Squad",
+              location: s.location || "Unknown Location",
+              date: isNaN(dateObj.getTime()) 
+                ? "TBD" 
+                : dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+              time: s.departure_time?.slice(0,5) || "TBD",
+              members: String(s.max_member),
+              status: isFuture ? "Upcoming" : "Completed",
+              images: imageList,
+              cost: s.cost || "0",
+              duration: s.duration || "N/A",
+              gender: s.gender || "Any",
+              ageGroup: s.age_group || "All",
+              tags: s.tag,
+              squad_code: s.squad_code,
+              user_id: s.user_id,
+            };
+          });
+
+          let filtered: DisplaySquad[] = transformed;
+          if (activeTab === 'hosted') {
+            filtered = transformed.filter(s => s.user_id === Number(user.id));
+          } else if (activeTab === 'joined') {
+            filtered = transformed.filter(s => s.user_id !== Number(user.id));
+          }
+
+          setDisplaySquads(prev => {
+            // Check for duplicates to prevent issues with strict mode or fast pagination
+            const existingIds = new Set(prev.map(s => s.id));
+            const uniqueNew = filtered.filter(s => !existingIds.has(s.id));
+            return [...prev, ...uniqueNew];
+          });
+          
+          dispatch(setSquads(transformed));
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          console.error("Squad fetch error:", err);
+          setError(err.message || "Failed to load squads.");
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchSquads();
+
+    return () => { isMounted = false; }; 
+  }, [isLoggedIn, user?.id, activeTab, activeCategory, page, dispatch]);
 
   if (!mounted) return null;
   if (!isLoggedIn) return <AccessDeniedScreen />;
 
   return (
     <div className="min-h-screen bg-background pb-24 overflow-x-hidden">
-      
-      {/* --- 1. Header (Dynamic Title based on Tab) --- */}
+      {/* Header */}
       <div className="bg-muted/30 pt-16 pb-20 px-4 md:px-8 border-b border-border/50 relative overflow-hidden">
-        {/* Decorative Background Blob */}
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl -z-10" />
-        
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-end justify-between gap-8">
           <div className="space-y-3">
             <div className="flex items-center gap-2 px-3 py-1 bg-primary/10 w-fit rounded-full">
-               <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-               <p className="text-[10px] font-black uppercase tracking-widest text-primary">Member Hub</p>
+              <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">Member Hub</p>
             </div>
-            <h1 className="text-5xl md:text-7xl font-black tracking-tighter italic uppercase flex items-center gap-4 leading-none">
+            <h1 className="text-4xl md:text-7xl font-black tracking-tighter italic uppercase flex items-center gap-4 leading-none">
               {activeTab === 'agency' ? "Agency Desk" : "My Hub"}
             </h1>
             <p className="text-muted-foreground font-bold text-xs uppercase tracking-[0.2em]">
               Welcome back explorer, <span className="text-foreground">@{user?.name?.split(' ')[0] || 'Traveler'}</span>
             </p>
           </div>
-          
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => setIsSquadModalOpen(true)} className="group flex items-center gap-3 bg-foreground text-background px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl active:scale-95">
-              <Plus size={18} className="group-hover:rotate-90 transition-transform" /> New Squad
+            <button onClick={() => setIsSquadModalOpen(true)} className="group flex-1 md:flex-none flex items-center justify-center gap-3 bg-foreground text-background px-6 md:px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl active:scale-95">
+              <Plus size={18} /> New Squad
             </button>
-            <button onClick={() => setIsPackageModalOpen(true)} className="flex items-center gap-3 bg-secondary text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-secondary/20 hover:shadow-secondary/40 transition-all active:scale-95">
+            <button onClick={() => setIsPackageModalOpen(true)} className="flex-1 md:flex-none flex items-center justify-center gap-3 bg-secondary text-white px-6 md:px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95">
               <PlusCircle size={18} /> Add Pro Package
             </button>
           </div>
@@ -71,122 +216,234 @@ export default function MySquadsPage() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 md:px-8 -mt-10 relative z-10">
-        
-        {/* --- 2. Dashboard Tabs (Glassmorphism Effect) --- */}
-        <div className="flex overflow-x-auto no-scrollbar gap-2 p-2 bg-card/80 backdrop-blur-xl border-2 border-border/50 rounded-[3rem] w-full sm:w-fit shadow-2xl mb-16">
-          {(['joined', 'hosted'] as const).map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-10 py-4 rounded-[2rem] text-[10px] font-black transition-all uppercase tracking-widest whitespace-nowrap ${activeTab === tab ? 'bg-foreground text-background shadow-xl scale-105' : 'text-muted-foreground hover:text-foreground'}`}>
-              {tab === 'joined' ? 'Joined' : 'My Hosted'}
+        <div className="flex flex-col gap-6 mb-12">
+          {/* Tabs */}
+          <div className="flex overflow-x-auto no-scrollbar gap-2 p-2 bg-card/80 backdrop-blur-xl border-2 border-border/50 rounded-[3rem] w-full lg:w-fit shadow-2xl">
+            {(['joined', 'hosted'] as const).map((tab) => (
+              <button 
+                key={tab} 
+                onClick={() => setActiveTab(tab)} 
+                className={`px-6 md:px-10 py-4 rounded-4xl text-[10px] font-black transition-all uppercase tracking-widest ${activeTab === tab ? 'bg-foreground text-background shadow-xl' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {tab === 'joined' ? 'Joined' : 'My Hosted'}
+              </button>
+            ))}
+            <button 
+              onClick={() => setActiveTab('agency')} 
+              className={`px-6 md:px-10 py-4 rounded-4xl text-[10px] font-black transition-all uppercase tracking-widest flex items-center gap-2 ${activeTab === 'agency' ? 'bg-secondary text-white shadow-xl' : 'text-secondary hover:bg-secondary/10'}`}
+            >
+              <Building2 size={16} /> Agency
             </button>
-          ))}
-          <div className="w-[2px] bg-border/50 mx-2 self-center h-8 shrink-0" />
-          <button onClick={() => setActiveTab('agency')} className={`px-10 py-4 rounded-[2rem] text-[10px] font-black transition-all uppercase tracking-widest flex items-center gap-2 whitespace-nowrap ${activeTab === 'agency' ? 'bg-secondary text-white shadow-xl scale-105' : 'text-secondary hover:bg-secondary/10'}`}>
-            <Building2 size={16} /> Agency Desk
-          </button>
+          </div>
+
+          {activeTab !== 'agency' && (
+            <div className="flex overflow-x-auto no-scrollbar gap-2 p-2 bg-muted/40 border border-border/40 rounded-[2.5rem] w-full lg:w-fit shadow-lg">
+              {categoryOptions.map((cat) => (
+                <button 
+                  key={cat.name} 
+                  onClick={() => setActiveCategory(cat.name)} 
+                  className={`px-5 md:px-8 py-3 rounded-full text-[9px] font-black transition-all uppercase tracking-widest flex items-center gap-2 ${activeCategory === cat.name ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-background/60'}`}
+                >
+                  {cat.icon} {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* --- 3. Content Area --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-          
-          {/* Joined & Hosted Squads List */}
-          {(activeTab === 'joined' || activeTab === 'hosted') && (
-            (activeTab === 'joined' ? joinedSquads : hostedSquads).map(squad => (
-              <div key={squad.id} className="group bg-card border-2 border-border/50 rounded-[3.5rem] overflow-hidden hover:border-primary transition-all flex flex-col shadow-sm hover:shadow-2xl hover:-translate-y-2 duration-500">
-                <div className="relative h-64 overflow-hidden shrink-0">
-                  <img src={squad.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={squad.title} />
-                  <div className="absolute top-6 left-6 bg-background/95 backdrop-blur-md border border-border px-4 py-2 rounded-2xl text-[10px] font-black tracking-widest uppercase">
-                    {squad.status}
-                  </div>
-                </div>
-                <div className="p-10 flex flex-col flex-1">
-                  <h3 className="text-3xl font-black uppercase italic tracking-tighter mb-6 leading-none group-hover:text-primary transition-colors">{squad.title}</h3>
-                  <div className="grid grid-cols-2 gap-y-4 text-muted-foreground text-[10px] font-black uppercase tracking-tighter mb-8">
-                    <span className="flex items-center gap-2"><MapPin size={16} className="text-primary"/> {squad.location}</span>
-                    <span className="flex items-center gap-2"><Calendar size={16} className="text-primary"/> {squad.date}</span>
-                    <span className="flex items-center gap-2"><Users size={16} className="text-primary"/> {squad.members}</span>
-                  </div>
-                  
-                  <Link 
-                    href={`/my-squads/${squad.id}`} 
-                    className="mt-auto w-full py-5 bg-muted group-hover:bg-foreground group-hover:text-background rounded-[2rem] font-black text-[11px] uppercase tracking-[0.2em] transition-all text-center flex justify-center items-center gap-2"
-                  >
-                    Enter Squad Hub <ArrowUpRight size={16} />
-                  </Link>
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Agency Management Section */}
-          {activeTab === 'agency' && (
+          {activeTab === 'agency' ? (
+            <AgencyView setIsPackageModalOpen={setIsPackageModalOpen} />
+          ) : (
             <>
-              {/* Stats & Quick Action */}
-              <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-                <StatCard label="Live Packages" value="02" icon={<History />} color="secondary" />
-                <StatCard label="Avg Rating" value="4.8" icon={<Star />} color="primary" />
-                <button onClick={() => setIsPackageModalOpen(true)} className="bg-secondary p-10 rounded-[3rem] text-white flex flex-col justify-center items-start cursor-pointer hover:shadow-2xl hover:shadow-secondary/30 transition-all group min-h-[160px]">
-                  <PlusCircle size={40} className="mb-4 group-hover:rotate-90 transition-transform duration-500" />
-                  <p className="text-lg font-black uppercase italic leading-tight tracking-tighter">List New <br/> Pro Package</p>
-                </button>
-              </div>
-
-              {/* Agency Package Cards */}
-              {agencyPackages.map(pkg => (
-                <div key={pkg.id} className="col-span-full group bg-card border-2 border-border/50 rounded-[3.5rem] overflow-hidden flex flex-col md:flex-row hover:border-secondary transition-all shadow-lg hover:shadow-2xl duration-500">
-                  <div className="w-full md:w-[40%] h-64 md:h-auto overflow-hidden shrink-0">
-                    <img src={pkg.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={pkg.title} />
-                  </div>
-                  <div className="p-10 md:w-[60%] flex flex-col justify-between flex-1">
-                    <div>
-                      <div className="flex justify-between items-center mb-4">
-                        <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${pkg.status === 'Live' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>{pkg.status}</span>
-                        <span className="text-3xl font-black text-secondary italic">{pkg.price}</span>
-                      </div>
-                      <h4 className="text-3xl font-black uppercase italic tracking-tighter leading-tight mb-4 group-hover:text-secondary transition-colors">{pkg.title}</h4>
-                      <div className="flex gap-6">
-                        <p className="text-[10px] font-black text-muted-foreground uppercase flex items-center gap-2">
-                          Confirmed Bookings: <span className="text-foreground text-xs">{pkg.bookings}</span>
-                        </p>
-                        <p className="text-[10px] font-black text-muted-foreground uppercase flex items-center gap-2">
-                          Rating: <span className="flex items-center text-secondary"><Star size={12} fill="currentColor" className="mr-1"/> {pkg.rating}</span>
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col sm:flex-row gap-3 mt-10">
-                      <Link 
-                        href={`/my-squads/manage-tour/${pkg.id}`}
-                        className="flex-1 py-4 bg-muted hover:bg-secondary hover:text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all text-center flex items-center justify-center"
-                      >
-                        Manage Dashboard
-                      </Link>
-                      <button className="p-4 border-2 border-border rounded-2xl hover:bg-muted transition-all active:scale-90">
-                        <Settings2 size={20} />
-                      </button>
-                    </div>
-                  </div>
+              {displaySquads.map((squad, index) => {
+                const isLastElement = displaySquads.length === index + 1;
+                return (
+                  <SquadCard 
+                    key={`${squad.id}-${index}`} 
+                    squad={squad} 
+                    category={activeCategory} 
+                    innerRef={isLastElement ? lastSquadElementRef : null} 
+                  />
+                );
+              })}
+              
+              {loading && (
+                <div className="col-span-full text-center py-10">
+                  <Loader2 className="w-10 h-10 animate-spin mx-auto text-primary" />
                 </div>
-              ))}
+              )}
+
+              {error && (
+                <div className="col-span-full text-center text-red-500 font-black py-8">
+                  {error}
+                </div>
+              )}
+
+              {!loading && displaySquads.length === 0 && (
+                <div className="col-span-full text-center py-20 bg-muted/10 rounded-[4rem] border-2 border-dashed border-muted-foreground/30">
+                  <p className="text-muted-foreground font-black uppercase italic text-lg">
+                    {activeTab === 'joined' 
+                      ? `No ${activeCategory} squads you've joined yet.` 
+                      : `No ${activeCategory} squads found.`}
+                  </p>
+                  {activeTab === 'joined' && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      (This feature may require a separate "joined squads" API endpoint)
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {/* Modals */}
       <CreateSquadModal isOpen={isSquadModalOpen} onClose={() => setIsSquadModalOpen(false)} />
       <CreatePackageModal isOpen={isPackageModalOpen} onClose={() => setIsPackageModalOpen(false)} />
     </div>
   );
 }
 
-// --- Helper Stat Card ---
-function StatCard({ label, value, icon, color }: any) {
+
+
+// ── New Component: SquadCard with Carousel Logic ──
+function SquadCard({ squad, category, innerRef }: { squad: DisplaySquad; category: string; innerRef: any }) {
+  const [currentImgIdx, setCurrentImgIdx] = useState(0);
+  const hasImages = squad.images && squad.images.length > 0;
+
+  const nextImg = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setCurrentImgIdx((prev) => (prev + 1) % squad.images.length);
+  };
+
+  const prevImg = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setCurrentImgIdx((prev) => (prev - 1 + squad.images.length) % squad.images.length);
+  };
+
+  const maxCount = parseInt(squad.members) || 10;
+  const currentJoined = squad.requestCount || 1;
+  const spotsLeft = maxCount - currentJoined;
+  const progressPercentage = (currentJoined / maxCount) * 100;
+  const genderType = squad.gender.includes("Boys") ? "Only Boys" : squad.gender.includes("Girls") ? "Only Girls" : "Mixed";
+
+  return (
+    <div ref={innerRef} className="group relative bg-card border border-border rounded-[2.5rem] p-5 transition-all duration-500 hover:shadow-2xl flex flex-col gap-5 w-full overflow-hidden">
+      
+      {/* Image Carousel */}
+      {hasImages && (
+        <div className="relative h-48 w-full rounded-[1.5rem] overflow-hidden bg-muted group/carousel">
+          <img 
+            src={squad.images[currentImgIdx]} 
+            alt={squad.title} 
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+          {squad.images.length > 1 && (
+            <>
+              <button onClick={prevImg} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full opacity-0 group-hover/carousel:opacity-100 transition-opacity">
+                <ChevronLeft size={16} />
+              </button>
+              <button onClick={nextImg} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full opacity-0 group-hover/carousel:opacity-100 transition-opacity">
+                <ChevronRight size={16} />
+              </button>
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                {squad.images.map((_, i) => (
+                  <div key={i} className={`h-1 rounded-full transition-all ${i === currentImgIdx ? "w-4 bg-primary" : "w-1 bg-white/50"}`} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-9 rounded-2xl bg-primary/10 flex items-center justify-center text-primary rotate-3">
+            <UserCircle size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase italic leading-none">Leader</p>
+            <span className="text-xs font-black">@explorer</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg border ${genderType === "Mixed" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" : genderType === "Only Boys" ? "bg-indigo-500/10 text-indigo-500 border-indigo-500/20" : "bg-pink-500/10 text-pink-500 border-pink-500/20"}`}>
+            {genderType}
+          </span>
+        </div>
+      </div>
+
+      {/* Details */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-start gap-2">
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 text-primary">
+              <MapPin size={14} className="animate-bounce" />
+              <span className="text-[10px] font-black uppercase italic">Location</span>
+            </div>
+            <h4 className="text-xl font-black tracking-tight uppercase italic">{squad.title}</h4>
+          </div>
+          <div className="px-3 py-2 bg-muted/50 rounded-2xl border border-border/50 shrink-0">
+            <p className="text-[9px] font-bold text-muted-foreground uppercase leading-none mb-1 text-right">Cost</p>
+            <div className="text-sm font-black flex items-center gap-0.5">
+              <BadgeIndianRupee size={14} className="text-primary" /> {squad.cost}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/30 rounded-xl text-[10px] font-black uppercase">
+            <Milestone size={14} className="text-secondary" /> Age: {squad.ageGroup}
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/30 rounded-xl text-[10px] font-black uppercase">
+            <ShieldCheck size={14} className="text-green-500" /> Verified
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <div className="flex items-center gap-2 px-3 py-2 bg-background rounded-xl border border-border/50 text-xs font-bold">
+            <Calendar size={14} className="text-primary" /> {squad.date}
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-background rounded-xl border border-border/50 text-xs font-bold">
+            <Users size={14} className="text-primary" /> {currentJoined}/{maxCount}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-4 border-t border-dashed">
+        <div className="flex items-center">
+          <div className="flex -space-x-2.5 mr-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-8 w-8 rounded-full border-2 border-card overflow-hidden">
+                <img src={`https://i.pravatar.cc/150?u=${squad.id}${i}`} className="w-full h-full" alt="avatar" />
+              </div>
+            ))}
+            <div className="h-8 w-8 rounded-full border-2 border-card bg-primary text-white flex items-center justify-center text-[10px] font-black">+{spotsLeft}</div>
+          </div>
+        </div>
+        <Link href={`/my-squads/${squad.squad_code}`} className="h-10 px-4 rounded-xl bg-foreground text-background flex items-center gap-2 font-black hover:bg-primary hover:text-white transition-all text-[10px] uppercase">
+          Enter Hub <ChevronRight size={14} />
+        </Link>
+      </div>
+
+      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-muted rounded-full overflow-hidden">
+        <div className={`h-full transition-all duration-1000 ${progressPercentage > 80 ? 'bg-red-500' : 'bg-primary'}`} style={{ width: `${progressPercentage}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Shared StatCard Component ──
+function StatCard({ label, value, icon, color }: { label: string; value: string; icon: any; color: 'primary' | 'secondary' }) {
   const isSecondary = color === 'secondary';
   return (
     <div className={`bg-card p-10 rounded-[3rem] border-2 border-border/50 flex items-center justify-between group transition-all hover:border-primary shadow-sm hover:shadow-xl`}>
       <div className="space-y-1">
         <p className="text-[10px] font-black uppercase opacity-60 tracking-widest text-muted-foreground">{label}</p>
-        <p className="text-5xl font-black italic text-foreground tracking-tighter">{value}</p>
+        <p className="text-4xl md:text-5xl font-black italic text-foreground tracking-tighter">{value}</p>
       </div>
       <div className={`p-5 rounded-[1.5rem] group-hover:rotate-12 group-hover:scale-110 transition-all duration-500 ${isSecondary ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
         {icon}
@@ -195,17 +452,30 @@ function StatCard({ label, value, icon, color }: any) {
   );
 }
 
-// --- Access Denied View ---
+// ── Shared Agency View ──
+function AgencyView({ setIsPackageModalOpen }: { setIsPackageModalOpen: any }) {
+  return (
+    <>
+      <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+        <StatCard label="Live Packages" value="02" icon={<History />} color="secondary" />
+        <StatCard label="Avg Rating" value="4.8" icon={<Star />} color="primary" />
+        <button onClick={() => setIsPackageModalOpen(true)} className="bg-secondary p-10 rounded-[3rem] text-white flex flex-col justify-center items-start group min-h-[160px]">
+          <PlusCircle size={40} className="mb-4 group-hover:rotate-90 transition-transform duration-500" />
+          <p className="text-lg font-black uppercase italic leading-tight">List New <br /> Package</p>
+        </button>
+      </div>
+    </>
+  );
+}
+
 function AccessDeniedScreen() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[90vh] px-4 text-center">
-      <div className="relative mb-8">
-        <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full animate-pulse" />
-        <div className="relative p-10 bg-primary/10 rounded-[4rem] border-2 border-primary/20"><Lock size={64} className="text-primary" /></div>
-      </div>
-      <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none mb-4">Access Restricted</h2>
-      <p className="text-xs uppercase font-bold text-muted-foreground tracking-[0.3em] max-w-xs leading-loose">Authenticity required to manage your private travel hub.</p>
-      <button className="mt-10 px-12 py-5 bg-foreground text-background rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-primary hover:text-white transition-all active:scale-95">Login to Portal</button>
+      <Lock size={64} className="text-primary mb-8" />
+      <h2 className="text-4xl font-black italic uppercase mb-4">Access Restricted</h2>
+      <button className="px-12 py-5 bg-foreground text-background rounded-4xl font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-primary hover:text-white transition-all">
+        Login to Portal
+      </button>
     </div>
   );
 }
