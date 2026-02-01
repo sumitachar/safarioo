@@ -21,8 +21,8 @@ import MediaSection from "@/components/squad/MediaSection";
 import MediaModal from "@/components/MediaModal";
 import ImageUploadModal from "@/components/ImageUploadModal";
 import { squadApi } from "@/api/squadApi";
-import { DisplaySquad } from "@/app/my-squads/page";
-import { updateSquad } from "@/store/slices/squadsSlice";
+// ফিক্সড ইমপোর্ট: সরাসরি স্লাইস থেকে টাইপ নেওয়া হয়েছে
+import { updateSquad, SquadBasic as DisplaySquad } from "@/store/slices/squadsSlice";
 
 // Membership status type
 type MembershipStatus = "admin" | "member" | "pending" | "not_joined";
@@ -35,18 +35,18 @@ export default function SquadDetailsPage({
   const params = use(paramsPromise);
   const squadId = params.id;
 
+  // Reading Global Filters from Redux
+  const { activeCategory } = useSelector((state: RootState) => state.squads);
+
   const dispatch = useDispatch<AppDispatch>();
   const { isLoggedIn, user } = useSelector((state: RootState) => state.auth);
-  const reduxSquad = useSelector((state: RootState) => 
-    state.squads.byCode[squadId] || state.squads.byId[squadId]
-  ) as DisplaySquad | undefined;
 
   const [squad, setSquad] = useState<DisplaySquad | null>(null);
   const [membership, setMembership] = useState<MembershipStatus>("not_joined");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<
+  const [activeTabSelector, setActiveTabSelector] = useState<
     "info" | "chat" | "requests" | "media" | "planning"
   >("info");
   const [mounted, setMounted] = useState(false);
@@ -74,7 +74,7 @@ export default function SquadDetailsPage({
   const [likes, setLikes] = useState(142);
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  
+
   // Modal & Media states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
@@ -95,7 +95,7 @@ export default function SquadDetailsPage({
   }, []);
 
   // Fetch squad data
-  useEffect(() => {
+useEffect(() => {
     if (!squadId || !isLoggedIn || !mounted) return;
 
     let isMounted = true;
@@ -105,56 +105,116 @@ export default function SquadDetailsPage({
       setError(null);
 
       try {
-        const response = await squadApi.getSquadById(squadId, "Travel Tour");
-
+        /**
+         * Redux slice এখন LocalStorage থেকে data লোড করে, 
+         * তাই activeCategory রিফ্রেশ করলেও সঠিক ভ্যালু (Movie/Event ইত্যাদি) ধরে রাখবে।
+         */
+        const response = await squadApi.getSquadById(squadId, activeCategory);
+        
         if (isMounted && response?.data) {
           const s = response.data;
-          const dateObj = new Date(s.departure_date);
 
-          // Fix: Ensure images are always present for DisplaySquad type
-          const imageList = s.images && s.images.length > 0 
-            ? s.images 
+          // ডাইনামিক ফিল্ড এক্সট্রাকশন (যাতে ভুল ক্যাটাগরিতে থাকলেও ডেটা পাওয়া যায়)
+          const title = s.movie_title || s.event_title || s.hangout_title || s.squad_title || "Untitled Squad";
+          const dateStr = s.movie_date || s.event_date || s.hangout_date || s.departure_date;
+          const timeStr = s.movie_time || s.event_time || s.hangout_time || s.departure_time;
+          const code = s.movie_code || s.event_code || s.hangout_code || s.squad_code || "N/A";
+
+          // ডেট অবজেক্ট প্রসেসিং
+          const dateObj = new Date(dateStr);
+          const isFuture = !isNaN(dateObj.getTime()) && dateObj > new Date();
+          
+          // ইমেজ অ্যারে হ্যান্ডলিং
+          const imageList = s.images && s.images.length > 0
+            ? s.images.map((img: any) => typeof img === 'string' ? img : img.image)
             : [`https://picsum.photos/seed/squad-${s.id}/800/500`];
 
+          // ডাটা ট্রান্সফর্মেশন
           const transformed: DisplaySquad = {
             id: String(s.id),
-            title: s.squad_title ?? "Untitled Squad",
+            title: title,
             location: s.location ?? "Unknown",
-            date: isNaN(dateObj.getTime()) 
-              ? "TBD" 
+            date: isNaN(dateObj.getTime())
+              ? "TBD"
               : dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-            time: s.departure_time ?? "TBD",
+            time: timeStr?.slice(0, 5) ?? "TBD", // HH:mm ফরম্যাট নিশ্চিত করতে
             members: String(s.max_member ?? "0"),
-            status: !isNaN(dateObj.getTime()) && dateObj > new Date() ? "Upcoming" : "Completed",
-            images: imageList, // Added to fix build error
+            status: isFuture ? "Upcoming" : "Completed",
+            images: imageList,
             cost: s.cost ?? "0",
             duration: s.duration ?? "N/A",
             gender: s.gender ?? "Any",
             ageGroup: s.age_group ?? "All",
             tags: s.tag ?? null,
-            squad_code: s.squad_code ?? "N/A",
+            squad_code: code,
             user_id: s.user_id,
             description: s.description ?? "",
             requestCount: s.requestCount ?? 0,
           };
 
+          // স্টেট আপডেট
           setSquad(transformed);
           setSquadImages(imageList);
           setMembership(s.user_id === user?.id ? "admin" : "not_joined");
+          
+          // রেডক্স স্টোর আপডেট (অন্যান্য কম্পোনেন্টের জন্য)
           dispatch(updateSquad(transformed));
+          
         } else if (isMounted) {
           setError("Squad mission not found in database.");
         }
       } catch (err: any) {
-        if (isMounted) setError(err.message || "Failed to establish connection to hub.");
+        if (isMounted) {
+          setError(err.message || "Failed to establish connection to hub.");
+        }
       } finally {
         if (isMounted) setLoading(false);
       }
     };
 
     fetchSquad();
+    
+    // মেমরি লিক রোধে ক্লিনআপ
     return () => { isMounted = false; };
-  }, [squadId, isLoggedIn, user?.id, mounted, dispatch]);
+    
+    /**
+     * Dependency array-তে activeCategory থাকা জরুরি, 
+     * যাতে ইউজার ক্যাটাগরি সুইচ করলে ডাটা অটোমেটিক রি-লোড হয়।
+     */
+  }, [squadId, isLoggedIn, user?.id, mounted, dispatch, activeCategory]);
+
+  // NEW: Implementation for Image Upload to Backend
+  const handleImageUpload = async (files: File[]) => {
+    if (!squad || files.length === 0) return;
+
+    try {
+      const formData = new FormData();
+      
+      // Slug mapping for backend validation: in:Travel,Event,Movie,Hangout
+      let slug = activeCategory;
+
+      formData.append("slug", slug);
+      formData.append("slug_tbl_id", squad.id);
+      
+      files.forEach((file) => {
+        formData.append("images[]", file);
+      });
+
+      const response = await squadApi.uploadSquadImages(formData);
+
+      if (response.status) {
+        // Extract new image paths from the backend response
+        const newPaths = response.data.map((item: any) => item.image);
+        const updatedImages = [...squadImages, ...newPaths];
+        
+        setSquadImages(updatedImages);
+        dispatch(updateSquad({ ...squad, images: updatedImages }));
+        setIsImgUploadModalOpen(false);
+      }
+    } catch (err: any) {
+      alert(err.message || "Image upload failed");
+    }
+  };
 
   const handleSaveMedia = (data: any) => {
     if (editingMedia) {
@@ -213,11 +273,16 @@ export default function SquadDetailsPage({
           style={{ transform: `translateX(-${currentSlide * 100}%)` }}
         >
           {squadImages.map((img, idx) => (
-            <img key={idx} src={img} className="w-full h-full object-cover shrink-0" alt={`Slide ${idx}`} />
+            <img 
+              key={idx} 
+              src={img.startsWith('http') ? img : `https://safariooapi.sumit-achar.site/${img}`} 
+              className="w-full h-full object-cover shrink-0" 
+              alt={`Slide ${idx}`} 
+            />
           ))}
         </div>
 
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/50 z-10" />
+        <div className="absolute inset-0 bg-linear-to-t from-background via-transparent to-black/50 z-10" />
 
         <div className="absolute inset-0 flex items-center justify-between px-6 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <button onClick={prevSlide} className="p-4 bg-black/20 backdrop-blur-xl rounded-full text-white hover:bg-primary transition-all border border-white/10">
@@ -280,17 +345,17 @@ export default function SquadDetailsPage({
       <div className="max-w-7xl mx-auto px-4 md:px-8 mt-12 relative z-30">
         <div className="flex justify-center mb-16">
           <div className="flex overflow-x-auto no-scrollbar gap-2 p-2 bg-card/60 backdrop-blur-xl border border-border/50 rounded-[2.5rem] shadow-2xl">
-            <TabButton active={activeTab === "info"} label="Info" onClick={() => setActiveTab("info")} />
-            <TabButton active={activeTab === "planning"} label="Planning" icon={<ClipboardList size={14} />} onClick={() => setActiveTab("planning")} />
-            <TabButton active={activeTab === "media"} label="Media" icon={<ImageIcon size={14} />} onClick={() => setActiveTab("media")} />
-            <TabButton active={activeTab === "chat"} label="Chat" icon={<MessageCircle size={14} />} onClick={() => setActiveTab("chat")} />
-            {isAdmin && <TabButton active={activeTab === "requests"} label={`Requests (${squad.requestCount ?? 0})`} icon={<UserCheck size={14} />} onClick={() => setActiveTab("requests")} variant="admin" />}
+            <TabButton active={activeTabSelector === "info"} label="Info" onClick={() => setActiveTabSelector("info")} />
+            <TabButton active={activeTabSelector === "planning"} label="Planning" icon={<ClipboardList size={14} />} onClick={() => setActiveTabSelector("planning")} />
+            <TabButton active={activeTabSelector === "media"} label="Media" icon={<ImageIcon size={14} />} onClick={() => setActiveTabSelector("media")} />
+            <TabButton active={activeTabSelector === "chat"} label="Chat" icon={<MessageCircle size={14} />} onClick={() => setActiveTabSelector("chat")} />
+            {isAdmin && <TabButton active={activeTabSelector === "requests"} label={`Requests (${squad.requestCount ?? 0})`} icon={<UserCheck size={14} />} onClick={() => setActiveTabSelector("requests")} variant="admin" />}
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           <div className="lg:col-span-8 space-y-12">
-            {activeTab === "info" && (
+            {activeTabSelector === "info" && (
               <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 ease-out">
                 <InfoTab details={squad} />
                 <div className="space-y-8">
@@ -307,9 +372,9 @@ export default function SquadDetailsPage({
               </div>
             )}
 
-            {activeTab === "planning" && <PlanningTab squadId={squadId} type="tour" />}
-            {activeTab === "chat" && <ChatSection />}
-            {activeTab === "media" && (
+            {activeTabSelector === "planning" && <PlanningTab squadId={squadId} type="tour" />}
+            {activeTabSelector === "chat" && <ChatSection />}
+            {activeTabSelector === "media" && (
               <MediaSection
                 mediaData={squadMedia}
                 onAdd={() => setIsMediaModalOpen(true)}
@@ -317,7 +382,7 @@ export default function SquadDetailsPage({
                 onDelete={(id) => setSquadMedia((prev) => prev.filter((m) => m.id !== id))}
               />
             )}
-            {activeTab === "requests" && isAdmin && <RequestsTab />}
+            {activeTabSelector === "requests" && isAdmin && <RequestsTab />}
           </div>
 
           <div className="lg:col-span-4 space-y-8">
@@ -348,7 +413,7 @@ export default function SquadDetailsPage({
                     </button>
                   </div>
                 ) : (
-                  <button className="w-full py-6 bg-primary text-white rounded-[2rem] font-black uppercase italic tracking-widest shadow-xl">
+                  <button className="w-full py-6 bg-primary text-white rounded-4xl font-black uppercase italic tracking-widest shadow-xl">
                     Apply to Join Squad
                   </button>
                 )}
@@ -360,7 +425,14 @@ export default function SquadDetailsPage({
 
       <EditSquadModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} squadData={squad} />
       <MediaModal isOpen={isMediaModalOpen} onClose={() => setIsMediaModalOpen(false)} onSave={handleSaveMedia} editData={editingMedia} />
-      <ImageUploadModal isOpen={isImgUploadModalOpen} onClose={() => setIsImgUploadModalOpen(false)} existingImages={squadImages} onSave={(upd: string[]) => { setSquadImages(upd); setCurrentSlide(0); }} />
+      
+      {/* Updated Image Upload Modal to handle File[] onSave */}
+      <ImageUploadModal 
+        isOpen={isImgUploadModalOpen} 
+        onClose={() => setIsImgUploadModalOpen(false)} 
+        existingImages={squadImages} 
+        onSave={handleImageUpload} 
+      />
     </div>
   );
 }
@@ -368,7 +440,7 @@ export default function SquadDetailsPage({
 // Helpers
 function TabButton({ active, label, onClick, icon, variant }: any) {
   return (
-    <button onClick={onClick} className={`px-8 py-4 rounded-[1.5rem] text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${active ? "bg-foreground text-background shadow-xl scale-105" : "text-muted-foreground hover:bg-muted/80"} ${variant === "admin" && !active ? "text-red-500 hover:text-red-400" : ""}`}>
+    <button onClick={onClick} className={`px-8 py-4 rounded-3xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${active ? "bg-foreground text-background shadow-xl scale-105" : "text-muted-foreground hover:bg-muted/80"} ${variant === "admin" && !active ? "text-red-500 hover:text-red-400" : ""}`}>
       {icon} {label}
     </button>
   );
@@ -393,7 +465,7 @@ function AccessDeniedScreen() {
     <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-6">
       <Lock size={64} className="text-primary mb-8 animate-bounce" />
       <h2 className="text-5xl font-black uppercase italic tracking-tighter mb-6">Access Restricted</h2>
-      <Link href="/login" className="px-12 py-6 bg-foreground text-background rounded-[2rem] font-black uppercase text-sm tracking-[0.2em] hover:bg-primary transition-all shadow-2xl">
+      <Link href="/login" className="px-12 py-6 bg-foreground text-background rounded-4xl font-black uppercase text-sm tracking-[0.2em] hover:bg-primary transition-all shadow-2xl">
         Authorize Session
       </Link>
     </div>

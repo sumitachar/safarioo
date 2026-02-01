@@ -12,11 +12,9 @@ import {
   ChevronRight, ChevronLeft, ShieldCheck, Milestone, BadgeIndianRupee
 } from "lucide-react";
 import { squadApi } from "@/api/squadApi";
-import { setSquads } from "@/store/slices/squadsSlice";
+import { setSquads, setActiveCategory, setActiveTab, SquadCategory, SquadTab, SquadBasic as DisplaySquad } from "@/store/slices/squadsSlice";
 
 // ── Types ──
-type SquadCategory = "Travel Tour" | "Movie" | "Event" | "Hangout";
-
 type SquadApiItem = {
   id: number;
   user_id: number;
@@ -38,32 +36,13 @@ type SquadApiItem = {
   images?: string[];
 };
 
-export type DisplaySquad = {
-  id: string;
-  title: string;
-  location: string;
-  date: string;
-  time: string;
-  members: string;
-  status: "Upcoming" | "Completed" | "live";
-  images: string[];
-  cost: string;
-  duration: string;
-  gender: string;
-  ageGroup: string;
-  tags: string[] | null;
-  squad_code: string;
-  user_id?: number;
-  description?: string;
-  requestCount?: number;
-};
-
 export default function MySquadsPage() {
   const dispatch = useDispatch<AppDispatch>();
   const { isLoggedIn, user } = useSelector((state: RootState) => state.auth);
 
-  const [activeTab, setActiveTab] = useState<'joined' | 'hosted' | 'agency'>('hosted');
-  const [activeCategory, setActiveCategory] = useState<SquadCategory>("Travel Tour");
+  // Reading Global Filters from Redux
+  const { activeCategory, activeTab } = useSelector((state: RootState) => state.squads);
+
   const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
   const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
 
@@ -77,18 +56,20 @@ export default function MySquadsPage() {
   useEffect(() => { setMounted(true); }, []);
 
   const categoryOptions: { name: SquadCategory; icon: any }[] = [
-    { name: "Travel Tour", icon: <Plane size={14} /> },
+    { name: "Travel", icon: <Plane size={14} /> },
     { name: "Movie", icon: <Film size={14} /> },
     { name: "Event", icon: <Ticket size={14} /> },
     { name: "Hangout", icon: <Coffee size={14} /> },
   ];
+
+
+  console.log("Rendering MySquadsPage with:", { activeCategory, activeTab });
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastSquadElementRef = useCallback((node: HTMLDivElement) => {
     if (loading) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
-      // Logic Fix: Only trigger next page if NOT loading, hasMore is true, and it's actually intersecting
       if (entries[0].isIntersecting && hasMore && !loading) {
         setPage(prevPage => prevPage + 1);
       }
@@ -96,7 +77,7 @@ export default function MySquadsPage() {
     if (node) observer.current.observe(node);
   }, [loading, hasMore]);
 
-  // Reset state when filters change
+  // Reset local lists when Global filters change
   useEffect(() => {
     setDisplaySquads([]);
     setPage(1);
@@ -107,38 +88,73 @@ export default function MySquadsPage() {
   useEffect(() => {
     if (!isLoggedIn || !user?.id || activeTab === 'agency') return;
 
-    // Use a flag to prevent state updates on unmounted component (handles StrictMode double-call)
     let isMounted = true;
 
     const fetchSquads = async () => {
       setLoading(true);
       setError(null);
       try {
-        console.log(`Fetching ${activeTab} squads for user ${user.id}, category: ${activeCategory}, page: ${page}`);
         const response = await squadApi.getSquads(activeCategory, user.id, page);
-        
+
         if (!isMounted) return;
 
-        const apiData = response?.data?.data || [];
+        // Handle different API structures (some return .data.data, others might just be .data)
+        const apiData = response?.data?.data || response?.data || [];
 
         if (apiData.length === 0) {
           setHasMore(false);
         } else {
-          const transformed: DisplaySquad[] = apiData.map((s: SquadApiItem) => {
-            const dateObj = new Date(s.departure_date);
+          const transformed: DisplaySquad[] = apiData.map((s: any) => {
+            // 1. Resolve Category-Specific Fields
+            let title = "";
+            let dateStr = "";
+            let timeStr = "";
+            let code = "";
+
+            switch (activeCategory) {
+              case "Movie":
+                title = s.movie_title;
+                dateStr = s.movie_date;
+                timeStr = s.movie_time;
+                code = s.movie_code;
+                break;
+              case "Event":
+                title = s.event_title;
+                dateStr = s.event_date;
+                timeStr = s.event_time;
+                code = s.event_code;
+                break;
+              case "Hangout":
+                title = s.hangout_title;
+                dateStr = s.hangout_date;
+                timeStr = s.hangout_time;
+                code = s.hangout_code;
+                break;
+              case "Travel":
+              default:
+                title = s.squad_title;
+                dateStr = s.departure_date;
+                timeStr = s.departure_time;
+                code = s.squad_code;
+                break;
+            }
+
+            // 2. Common Logic for Date & Images
+            const dateObj = new Date(dateStr);
             const isFuture = !isNaN(dateObj.getTime()) && dateObj > new Date();
-            const imageList = s.images && s.images.length > 0 
-              ? s.images 
+            const imageList = s.images && s.images.length > 0
+              ? s.images
               : [`https://picsum.photos/seed/squad-${s.id}/800/500`];
 
+            // 3. Return Standardized Object
             return {
               id: String(s.id),
-              title: s.squad_title || "Untitled Squad",
+              title: title || "Untitled Squad",
               location: s.location || "Unknown Location",
-              date: isNaN(dateObj.getTime()) 
-                ? "TBD" 
+              date: isNaN(dateObj.getTime())
+                ? "TBD"
                 : dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-              time: s.departure_time?.slice(0,5) || "TBD",
+              time: timeStr?.slice(0, 5) || "TBD",
               members: String(s.max_member),
               status: isFuture ? "Upcoming" : "Completed",
               images: imageList,
@@ -146,31 +162,34 @@ export default function MySquadsPage() {
               duration: s.duration || "N/A",
               gender: s.gender || "Any",
               ageGroup: s.age_group || "All",
-              tags: s.tag,
-              squad_code: s.squad_code,
+              tags: s.tag || [],
+              squad_code: code || "N/A",
               user_id: s.user_id,
             };
           });
 
+          console.log("Transformed Squads:", transformed);
+
+          // 4. Filter based on Tab
           let filtered: DisplaySquad[] = transformed;
           if (activeTab === 'hosted') {
-            filtered = transformed.filter(s => s.user_id === Number(user.id));
+            filtered = transformed.filter(s => Number(s.user_id) === Number(user.id));
           } else if (activeTab === 'joined') {
-            filtered = transformed.filter(s => s.user_id !== Number(user.id));
+            filtered = transformed.filter(s => Number(s.user_id) !== Number(user.id));
           }
 
+          // 5. Update State and Redux
           setDisplaySquads(prev => {
-            // Check for duplicates to prevent issues with strict mode or fast pagination
             const existingIds = new Set(prev.map(s => s.id));
             const uniqueNew = filtered.filter(s => !existingIds.has(s.id));
             return [...prev, ...uniqueNew];
           });
-          
+
           dispatch(setSquads(transformed));
         }
       } catch (err: any) {
         if (isMounted) {
-          console.error("Squad fetch error:", err);
+          console.error("Fetch error:", err);
           setError(err.message || "Failed to load squads.");
         }
       } finally {
@@ -180,7 +199,7 @@ export default function MySquadsPage() {
 
     fetchSquads();
 
-    return () => { isMounted = false; }; 
+    return () => { isMounted = false; };
   }, [isLoggedIn, user?.id, activeTab, activeCategory, page, dispatch]);
 
   if (!mounted) return null;
@@ -217,31 +236,32 @@ export default function MySquadsPage() {
 
       <div className="max-w-6xl mx-auto px-4 md:px-8 -mt-10 relative z-10">
         <div className="flex flex-col gap-6 mb-12">
-          {/* Tabs */}
+          {/* Tabs - Now Dispatching to Redux */}
           <div className="flex overflow-x-auto no-scrollbar gap-2 p-2 bg-card/80 backdrop-blur-xl border-2 border-border/50 rounded-[3rem] w-full lg:w-fit shadow-2xl">
             {(['joined', 'hosted'] as const).map((tab) => (
-              <button 
-                key={tab} 
-                onClick={() => setActiveTab(tab)} 
+              <button
+                key={tab}
+                onClick={() => dispatch(setActiveTab(tab))}
                 className={`px-6 md:px-10 py-4 rounded-4xl text-[10px] font-black transition-all uppercase tracking-widest ${activeTab === tab ? 'bg-foreground text-background shadow-xl' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {tab === 'joined' ? 'Joined' : 'My Hosted'}
               </button>
             ))}
-            <button 
-              onClick={() => setActiveTab('agency')} 
+            <button
+              onClick={() => dispatch(setActiveTab('agency'))}
               className={`px-6 md:px-10 py-4 rounded-4xl text-[10px] font-black transition-all uppercase tracking-widest flex items-center gap-2 ${activeTab === 'agency' ? 'bg-secondary text-white shadow-xl' : 'text-secondary hover:bg-secondary/10'}`}
             >
               <Building2 size={16} /> Agency
             </button>
           </div>
 
+          {/* Categories - Now Dispatching to Redux */}
           {activeTab !== 'agency' && (
             <div className="flex overflow-x-auto no-scrollbar gap-2 p-2 bg-muted/40 border border-border/40 rounded-[2.5rem] w-full lg:w-fit shadow-lg">
               {categoryOptions.map((cat) => (
-                <button 
-                  key={cat.name} 
-                  onClick={() => setActiveCategory(cat.name)} 
+                <button
+                  key={cat.name}
+                  onClick={() => dispatch(setActiveCategory(cat.name))}
                   className={`px-5 md:px-8 py-3 rounded-full text-[9px] font-black transition-all uppercase tracking-widest flex items-center gap-2 ${activeCategory === cat.name ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-background/60'}`}
                 >
                   {cat.icon} {cat.name}
@@ -259,15 +279,15 @@ export default function MySquadsPage() {
               {displaySquads.map((squad, index) => {
                 const isLastElement = displaySquads.length === index + 1;
                 return (
-                  <SquadCard 
-                    key={`${squad.id}-${index}`} 
-                    squad={squad} 
-                    category={activeCategory} 
-                    innerRef={isLastElement ? lastSquadElementRef : null} 
+                  <SquadCard
+                    key={`${squad.id}-${index}`}
+                    squad={squad}
+                    category={activeCategory}
+                    innerRef={isLastElement ? lastSquadElementRef : null}
                   />
                 );
               })}
-              
+
               {loading && (
                 <div className="col-span-full text-center py-10">
                   <Loader2 className="w-10 h-10 animate-spin mx-auto text-primary" />
@@ -283,8 +303,8 @@ export default function MySquadsPage() {
               {!loading && displaySquads.length === 0 && (
                 <div className="col-span-full text-center py-20 bg-muted/10 rounded-[4rem] border-2 border-dashed border-muted-foreground/30">
                   <p className="text-muted-foreground font-black uppercase italic text-lg">
-                    {activeTab === 'joined' 
-                      ? `No ${activeCategory} squads you've joined yet.` 
+                    {activeTab === 'joined'
+                      ? `No ${activeCategory} squads you've joined yet.`
                       : `No ${activeCategory} squads found.`}
                   </p>
                   {activeTab === 'joined' && (
@@ -330,13 +350,13 @@ function SquadCard({ squad, category, innerRef }: { squad: DisplaySquad; categor
 
   return (
     <div ref={innerRef} className="group relative bg-card border border-border rounded-[2.5rem] p-5 transition-all duration-500 hover:shadow-2xl flex flex-col gap-5 w-full overflow-hidden">
-      
+
       {/* Image Carousel */}
       {hasImages && (
         <div className="relative h-48 w-full rounded-[1.5rem] overflow-hidden bg-muted group/carousel">
-          <img 
-            src={squad.images[currentImgIdx]} 
-            alt={squad.title} 
+          <img
+            src={squad.images[currentImgIdx]}
+            alt={squad.title}
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
           />
           {squad.images.length > 1 && (

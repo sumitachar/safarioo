@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react";
 import { X, Save, MapPin, AlignLeft, Info, Calendar, Clock, DollarSign, Tag } from "lucide-react";
-import { DisplaySquad } from "@/app/my-squads/page";
+import { SquadBasic as DisplaySquad } from "@/store/slices/squadsSlice";
 
 interface EditSquadModalProps {
   isOpen: boolean;
